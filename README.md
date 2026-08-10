@@ -1,138 +1,146 @@
-py
+# Speech Emotion Recognition (SER) & Whisper STT App
 
-# EMOTION-DETECT
+Aplikasi web berbasis Streamlit untuk mendeteksi emosi ucapan (Speech Emotion Recognition) menggunakan arsitektur WavLM (`microsoft/wavlm-base-plus`) versi v7 yang diintegrasikan dengan transkrip teks otomatis Whisper STT (`openai/whisper-small`).
 
-Proyek **Speech Emotion Recognition (SER)** berbasis WavLM + aplikasi Streamlit dengan **Whisper STT**.
+---
 
-## Struktur
+## Fitur Utama
 
-```
-EMOTION-DETECT/
-├── requirements.txt          # Dependensi project
-├── ser-streamlit-app/        # Aplikasi inference (Streamlit)
-│   ├── app.py
-│   ├── model.py
-│   ├── utils.py
-│   └── models/
-│       └── ser_wavlm_v7_best.pt
-└── README.md
-```
+- Analisis Emosi Berbasis WavLM v7: Mendeteksi 6 kelas emosi (netral, senang, sedih, marah, takut, jijik) dengan model WavLM + Attentive Pooling yang dilatih pada multi-corpus dataset.
+- Transkrip Teks Otomatis (Speech-to-Text): Mentranskripsi pembicaraan audio penuh menggunakan OpenAI Whisper via transformers (tanpa butuh instalasi binary FFmpeg).
+- Visualisasi Probabilitas: Menampilkan tingkat kepercayaan (confidence score) dan grafik batang probabilitas emosi.
+- Auto-Download Checkpoint: Otomatis mendownload checkpoint model `ser_wavlm_v7_best.pt` dari Google Drive jika belum ada di lokal.
+- Mobile-First Responsive Interface: Antarmuka adaptif yang nyaman diakses dari smartphone maupun desktop.
 
-## Instalasi & menjalankan
+---
 
-```bash
-pip install -r requirements.txt
-cd ser-streamlit-app
-python -m streamlit run app.py
-```
+## Spesifikasi Inferensi Model
 
-Buka: http://localhost:8501
+| Parameter                  | Spesifikasi                                |
+| :------------------------- | :----------------------------------------- |
+| Model Backbone             | `microsoft/wavlm-base-plus`              |
+| Model Checkpoint           | `models/ser_wavlm_v7_best.pt` (WavLM v7) |
+| Sample Rate Input          | 16,000 Hz (Mono)                           |
+| Durasi Maksimum SER        | 4.0 detik (pad / crop otomatis)            |
+| Transkrip STT              | Audio Gelombang Penuh (Full Waveform)      |
+| Fungsi Aktivasi Classifier | `nn.GELU()`                              |
 
-## Model aktif
+### Class Index & Label Emosi:
 
-- **Checkpoint:** `ser-streamlit-app/models/ser_wavlm_v7_best.pt`
-- **Backbone:** `microsoft/wavlm-base-plus`
-- **Test accuracy (v7):** ~77.5%
-- **STT:** Whisper `openai/whisper-small` (via transformers)
+| ID | Label Emosi | Visual Icon |
+| :-: | :---------- | :---------: |
+| 0 | `netral`  |     😐     |
+| 1 | `senang`  |     😊     |
+| 2 | `sedih`   |     😢     |
+| 3 | `marah`   |     😡     |
+| 4 | `takut`   |     😨     |
+| 5 | `jijik`   |     🤢     |
 
-# Speech Emotion Recognition — Streamlit App
+---
 
-Aplikasi web berbasis **Streamlit** untuk mendeteksi emosi dari file audio menggunakan model **WavLM** (`microsoft/wavlm-base-plus`) yang sudah dilatih sebelumnya.
+## Panduan Instalasi (Step-by-Step)
 
-Aplikasi ini **hanya melakukan inferensi/prediksi** — tidak ada proses training, dataset, atau unduhan data pelatihan.
+Ikuti langkah-langkah di bawah ini secara berurutan untuk menghindari kesalahan konfigurasi lingkungan (environment):
 
-## Fitur
-
-- Upload file audio `.wav` atau `.mp3`
-- Prediksi 6 kelas emosi: netral, senang, sedih, marah, takut, jijik
-- Confidence score dan probabilitas per kelas
-- Bar chart visualisasi probabilitas
-- **Transkrip teks (Speech-to-Text)** dari audio menggunakan Whisper
-- Informasi audio: nama file, durasi, sample rate, jumlah kanal
-
-## Speech-to-Text (STT)
-
-- Menggunakan **Whisper** (`openai/whisper-small`) via `transformers`, **tanpa perlu FFmpeg**
-  (audio sudah di-decode oleh `torchaudio`/`librosa` lalu disuapkan langsung sebagai waveform).
-- Transkrip memakai **audio penuh** (bukan potongan 4 detik yang dipakai untuk analisis emosi).
-- Bahasa transkrip default: Indonesia (ubah `WHISPER_LANGUAGE` di `app.py`).
-- Untuk CPU yang lambat, ganti `WHISPER_MODEL` ke `"openai/whisper-base"` agar lebih ringan
-  (akurasi transkrip sedikit menurun). Set `ENABLE_STT = False` untuk menonaktifkan STT.
-- Unduhan model Whisper terjadi sekali di awal (butuh internet), setelah itu berjalan lokal.
-
-## Instalasi
+### 1. Clone Repositori & Masuk Direktori
 
 ```bash
-cd ser-streamlit-app
+git clone https://github.com/Elnathz/speech-emotion-detection.git
+cd speech-emotion-detection
+```
+
+### 2. Buat & Aktifkan Virtual Environment (.venv)
+
+> **PENTING:** Selalu gunakan Virtual Environment agar paket tidak mengotori Python sistem global dan terhindar dari bentrok Environment PATH.
+
+- **Windows (PowerShell)**:
+  ```powershell
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  ```
+- **Linux / macOS (Bash/Zsh)**:
+  ```bash
+  python -m venv .venv
+  source .venv/bin/activate
+  ```
+
+### 3. Install Dependensi Python
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> **Catatan:** Unduhan pertama kali akan memuat backbone WavLM dari HuggingFace (`microsoft/wavlm-base-plus`). Pastikan koneksi internet tersedia.
+---
 
 ## Menjalankan Aplikasi
 
-```bash
-streamlit run app.py
+Jalankan Streamlit menggunakan Python Module Runner (`python -m streamlit`) di terminal yang sudah teraktifkan `.venv`:
+
+```powershell
+python -m streamlit run app.py
 ```
 
-Aplikasi akan terbuka di browser (biasanya `http://localhost:8501`).
+Aplikasi akan otomatis terbuka di browser pada alamat: `http://localhost:8501`.
 
-## Struktur Folder
+---
+
+## Troubleshooting & Kesalahan Umum (Gotchas)
+
+Berikut adalah daftar masalah umum yang sering terjadi beserta solusinya:
+
+### 1. `streamlit : The term 'streamlit' is not recognized...`
+
+- **Penyebab**: Executable `streamlit.exe` berada di folder `Scripts` yang tidak terdaftar di Windows Environment Variable `PATH` sistem.
+- **Solusi**:
+  - Pastikan Virtual Environment `.venv` sudah diaktifkan (`.\.venv\Scripts\Activate.ps1`), ATAU
+  - Jalankan Streamlit dengan perintah `python -m streamlit run app.py`.
+
+### 2. Error Kompilasi C NumPy / Ninja / GCC (subcommand failed) saat `pip install`
+- **Penyebab**: Menggunakan Python 3.13 dengan `requirements.txt` lama yang mematok `numpy<2.0` atau `numba==0.58.1`. PyPI tidak menyediakan pre-built `.whl` untuk NumPy 1.x pada Python 3.13 sehingga pip mencoba mengompilasi dari C source.
+- **Solusi**: Gunakan file `requirements.txt` terbaru pada repo ini yang sudah melonggarkan batas versi (`numpy>=1.24.0`) agar pip secara otomatis mengunduh wheel binary pra-kompilasi.
+
+### 3. `ImportError: cannot import name 'Wav2Vec2FeatureExtractor' from 'transformers'`
+- **Penyebab**: Menjalankan aplikasi Streamlit ketika proses `pip install` di terminal lain belum selesai 100%, atau masalah lazy import pada versi `transformers` tertentu.
+- **Solusi**: Tunggu hingga `pip install -r requirements.txt` selesai penuh. Kode di `app.py` sudah dilengkapi penanganan fallback ke `AutoFeatureExtractor`.
+
+### 4. `NameError: name 'torch' is not defined`
+- **Penyebab**: Modul `import torch` terhapus atau tertimpa pada baris atas `app.py`.
+- **Solusi**: Pastikan baris `import torch` terpasang di bagian atas file `app.py` sebelum pemanggilan `torch.cuda.is_available()`.
+
+
+---
+
+## Struktur Proyek
 
 ```
-ser-streamlit-app/
-│
-├── app.py                  # Aplikasi Streamlit utama
-├── model.py                # Arsitektur model & load checkpoint
-├── utils.py                # Preprocessing audio & inferensi
-├── requirements.txt        # Dependensi Python
-├── README.md
-│
+speech-emotion-detection/
+├── app.py                  # Aplikasi Streamlit utama (UI/UX)
+├── model.py                # Arsitektur WavLMSERModel PyTorch & auto-download model
+├── utils.py                # Preprocessing audio (16kHz mono, 4s crop, STT pipeline)
+├── requirements.txt        # Daftar dependensi Python
+├── AGENTS.md               # Sumber kebenaran operasional & konvensi commit
+├── tdd_changes_tracker.md  # Pencatatan perubahan siklus TDD & audio spec
+├── README.md               # Dokumentasi proyek
 ├── models/
-│   └── ser_wavlm_v7_best.pt   # Checkpoint model terlatih (v7)
-│
-└── assets/
-    └── sample_audio/       # (Opsional) contoh file audio uji
+│   └── ser_wavlm_v7_best.pt# Checkpoint model terlatih WavLM v7 (Auto-downloaded)
+└── pipeline/
+    └── ser-augmemted.ipynb # Notebook Jupyter sumber training & eksperimen model v7
 ```
 
-## Mengganti File Model
+---
 
-1. Letakkan checkpoint baru di folder `models/`.
-2. Ubah variabel `MODEL_PATH` di `app.py`:
+## Standar Komitmen Kode (Conventional Commits)
 
-```python
-MODEL_PATH = BASE_DIR / "models" / "nama_checkpoint_baru.pt"
+Proyek ini menerapkan standar Conventional Commits (v1.0.0). Format pesan commit yang diizinkan:
+
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+Refs: tdd_changes_tracker.md / notebook v7
 ```
 
-Checkpoint yang didukung:
-
-- State dict langsung
-- Dictionary dengan key `model_state_dict`
-- Dictionary dengan key `model_state`
-
-## Spesifikasi Inferensi
-
-| Parameter       | Nilai                                 |
-| --------------- | ------------------------------------- |
-| Sample rate     | 16.000 Hz                             |
-| Kanal           | Mono                                  |
-| Durasi maksimum | 8 detik (dipotong jika lebih panjang) |
-| Backbone        | `microsoft/wavlm-base-plus`         |
-| Jumlah kelas    | 6                                     |
-
-## Label Emosi
-
-| ID | Label  |
-| -- | ------ |
-| 0  | netral |
-| 1  | senang |
-| 2  | sedih  |
-| 3  | marah  |
-| 4  | takut  |
-| 5  | jijik  |
-
-## Catatan Teknis
-
-- Aplikasi berjalan di **CPU** maupun **GPU (CUDA)**. CPU lebih lambat namun tetap fungsional.
-- Semua path menggunakan **relative path** sehingga dapat dijalankan secara lokal.
-- Model checkpoint: `models/ser_wavlm_v7_best.pt` (ubah `MODEL_PATH` di `app.py` jika perlu).
+Tipe commit yang valid: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `chore`.
+Scope yang valid: `model`, `pipeline`, `ui`, `docs`, `chore`.
