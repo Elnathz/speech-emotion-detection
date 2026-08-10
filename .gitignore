@@ -1,0 +1,50 @@
+# ==========================================
+# Python & Byte-compiled files
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# Machine Learning Weights & Checkpoints
+# ==========================================
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.safetensors
+*.onnx
+
+# ==========================================
+# Audio Datasets, Pipelines & Logs
+# ==========================================
+data/
+raw/
+augmented/
+processed/
+pipeline/*.csv
+pipeline/*.zip
+*.log
+*.tmp
+
+# ==========================================
+# Virtual Environments
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+
+# ==========================================
+# Streamlit & Secrets
+# ==========================================
+.streamlit/secrets.toml
+
+# ==========================================
+# IDE & System Files
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
