@@ -1,0 +1,79 @@
+# Walkthrough
+
+## [2026-08-12] Fitur Rekam Mikrofon Langsung (Live Record)
+
+### Konteks
+Branch `dev-eln`. Sebelumnya aplikasi hanya menerima audio melalui `st.file_uploader` (.wav/.mp3). Ditambahkan opsi rekam langsung dari mikrofon browser, lalu pengguna tetap menekan tombol "Analisis Emosi" secara manual (bukan inferensi otomatis saat rekaman selesai).
+
+### Keputusan Desain
+- Menggunakan `st.audio_input` native Streamlit, bukan dependency pihak ketiga (`streamlit-webrtc` dsb). Hasilnya adalah `UploadedFile` (subclass `BytesIO`) berformat WAV yang langsung kompatibel dengan `load_audio()` di `utils.py` tanpa modifikasi decoder.
+- Tidak mengimplementasikan inferensi real-time/streaming. Kebutuhan yang diminta adalah pola "rekam, berhenti, preview, analisis", sesuai opsi 1 dari dua kemungkinan makna "live record" yang didiskusikan.
+- Cache key prediksi diubah dari `(nama_file, ukuran_file)` menjadi `(sumber, sha256(bytes_audio))` karena dua rekaman mikrofon dapat memiliki nama dan ukuran identik, sehingga cache lama berisiko tidak ter-invalidasi dengan benar.
+
+### File yang Diubah
+- `app.py`: pemilih sumber (`st.radio`), integrasi `st.audio_input`, unifikasi variabel `uploaded_file` -> `audio_file`, fungsi `_audio_key()` menggantikan `_upload_key()`.
+- `components/ui.py`: copy `render_hero()` dan `render_empty_state()` diperbarui agar netral terhadap sumber audio (unggah atau rekam).
+- `requirements.txt`: `streamlit>=1.28.0` dinaikkan ke `streamlit>=1.41.0` karena `st.audio_input` baru general availability di v1.40.0 dengan perbaikan bug penting di v1.41.0.
+- `tdd_changes_tracker.md`: dicatat sesuai kebijakan proyek untuk perubahan yang menyentuh alur input inferensi.
+
+### Yang Tidak Diubah
+- `model.py`, arsitektur `WavLMSERModel`, dan `services.py` (loading model/feature extractor).
+- `utils.py`, termasuk `MAX_DURATION_SECONDS = 4.0`, target sample rate `16000 Hz`, dan pipeline STT Whisper.
+- Label emosi Bahasa Indonesia (`netral`, `senang`, `sedih`, `marah`, `takut`, `jijik`).
+
+### Verifikasi
+- `python -m py_compile app.py components\ui.py components\sidebar.py components\css.py services.py config.py utils.py model.py` -> berhasil tanpa error sintaks.
+- Verifikasi runtime penuh (`import streamlit`, `import utils`) tidak dapat dijalankan di environment kerja ini karena dependency (`streamlit`, `soundfile`, dll.) belum terpasang dan tidak ada virtualenv lokal (`.venv`) yang tersedia. Perlu dijalankan manual sebelum deployment:
+  ```powershell
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+  python -m streamlit run app.py
+  ```
+
+### Implikasi Operasional
+- Mikrofon browser memerlukan konteks aman (`localhost` atau HTTPS). Pada deployment cloud tanpa HTTPS, tombol rekam akan gagal meminta izin mikrofon.
+- Jika pengguna menolak izin mikrofon, mode "Unggah File" tetap tersedia sebagai fallback karena kedua mode independen melalui `st.radio`.
+
+### Follow-up yang Disarankan (Belum Dikerjakan)
+- Uji manual end-to-end dengan Streamlit terpasang: rekam audio, verifikasi metadata, jalankan prediksi, dan transkrip Whisper.
+- Review responsivitas mobile untuk `st.radio` dan `st.audio_input` pada layar kecil, karena keduanya belum diverifikasi visual pada breakpoint mobile-first proyek ini.
+
+## [2026-08-12] Perbaikan Bug Kritis: Crash Inferensi & Penyimpangan Arsitektur Pooling dari Checkpoint v7
+
+### Konteks
+Setelah fitur live record ditambahkan, pengguna melaporkan error "File audio tidak dapat diproses" saat menekan tombol Analisis Emosi. Investigasi lanjutan (bukan asumsi langsung) mengonfirmasi via tanya-jawab bahwa: (1) metadata dan pratinjau audio tampil normal sebelum error, artinya decode audio berhasil; (2) mode unggah file juga gagal dengan pesan sama. Kedua fakta ini mengeliminasi fitur live record sebagai penyebab, mengarah ke bug pre-existing di pipeline inferensi bersama.
+
+### Root Cause yang Ditemukan
+Tiga bug ditemukan lewat pembacaan kode dan perbandingan langsung dengan `pipeline/ser-augmemted.ipynb` (sumber kebenaran v7 per AGENTS.md):
+
+1. **Crash `AttributeError`** di `utils.py` fungsi `predict_emotion()`. Pemanggilan `processor(...)` tanpa `return_tensors="pt"` mengembalikan list numpy, bukan tensor, sehingga `.to(device)` gagal. `except Exception` generik di `app.py` membungkam error asli menjadi pesan menyesatkan.
+
+2. **Silent correctness bug** di `model.py` `AttentionPooling`. Implementasi lama mengembalikan `[attn_pooled, plain_mean]`, sedangkan checkpoint `ser_wavlm_v7_best.pt` dilatih dengan `[weighted_mean, weighted_std]` (attentive stats pooling). Karena nama atribut kebetulan sama, `load_state_dict(strict=True)` tidak pernah mendeteksi ketidakcocokan ini. Model tetap berjalan dan mengeluarkan angka, tapi separuh fitur classifier menerima distribusi input yang salah secara matematis.
+
+3. **Preprocessing menyimpang dari kontrak v7** di `utils.py` `preprocess_audio()`. Tidak ada silence trim, peak normalization, atau zero-padding untuk audio pendek. Audio di bawah 4 detik (kasus umum untuk rekaman mikrofon) sebelumnya diloloskan dengan panjang tensor variabel, tidak pernah tepat 64000 sampel seperti kondisi training.
+
+### Perbaikan yang Dilakukan
+- `model.py`: `AttentionPooling.forward()` ditulis ulang menjadi attentive statistics pooling (weighted mean + weighted std), `WavLMSERModel.forward()` disesuaikan agar tidak lagi concat mean tambahan. `masked_fill` diganti dari `-inf` ke `-1e4` untuk mencegah NaN. `DEFAULT_DROPOUT` diselaraskan dari `0.35` ke `0.30`.
+- `utils.py`: `predict_emotion()` dilengkapi argumen `padding`, `truncation`, `max_length`, `return_attention_mask`, `return_tensors="pt"` persis sesuai notebook. `preprocess_audio()` ditambah fungsi `_trim_silence()`, `_peak_normalize()`, `_fix_length_eval()` yang mereplikasi urutan wajib: sanitasi NaN -> trim 30dB (dengan guard panjang minimum) -> peak normalization -> center crop / right zero-pad ke tepat 64000 sampel.
+- `app.py`: pesan error kini menyertakan `type(exc).__name__` dan pesan asli, ditambah expander traceback lengkap untuk debugging.
+
+### Verifikasi yang Dilakukan
+Karena `streamlit`, `torch`, dll. tidak terpasang di environment kerja utama, dibuat virtual environment sementara (`.venv_test`) khusus untuk pengujian, dihapus setelah selesai (tidak tercatat di git, tidak mengubah `requirements.txt` project):
+
+1. Unit test murni numpy untuk `_trim_silence`, `_peak_normalize`, `_fix_length_eval`, dan sanitasi NaN, mencakup kasus audio pendek, audio panjang, audio hening total. Semua PASS, output selalu tepat 64000 sampel tanpa NaN.
+2. Unit test `AttentionPooling` dan `WavLMSERModel.forward()` dengan backbone `microsoft/wavlm-base-plus` asli (bukan mock). Shape pooled `(1, 1536)`, shape logits `(1, 6)`, tanpa NaN, termasuk edge case partial attention mask.
+3. Test `predict_emotion()` dengan `AutoFeatureExtractor` asli: berhasil tanpa `AttributeError`, softmax probabilitas menjumlah ke `1.0`.
+4. Test pipeline penuh `preprocess_audio() -> predict_emotion()` untuk dua skenario: simulasi rekaman mikrofon pendek (1.5 detik, sample rate 48kHz, khas browser) dan simulasi unggah file panjang (6 detik, 16kHz). Keduanya PASS tanpa exception.
+
+`python -m py_compile` juga dijalankan ulang untuk seluruh file yang diubah, berhasil tanpa error sintaks.
+
+### Yang Belum Diverifikasi
+- Akurasi aktual terhadap `models/evaluasi_test_v7.csv` untuk mengonfirmasi angka `test_acc 0.7746` di `models/config_v7.json` tercapai kembali setelah perbaikan pooling. Test yang dilakukan memakai waveform acak (random noise), bukan audio nyata dengan label ground truth, sehingga hanya membuktikan tidak ada crash dan shape/NaN benar, bukan membuktikan akurasi.
+- Uji manual UI langsung (Streamlit berjalan) dengan rekaman mikrofon dan file unggah nyata.
+
+### Dampak yang Perlu Diketahui
+Hasil prediksi akan berbeda dibanding sebelum perbaikan ini, untuk audio yang sama persis. Ini disengaja karena perilaku lama salah secara matematis terhadap checkpoint yang dimuat. Jika ada laporan atau demo yang sudah terlanjur memakai output dari kode lama, angkanya tidak akan lagi cocok.
+
+### Follow-up yang Disarankan
+- Jalankan skrip evaluasi batch terhadap `models/evaluasi_test_v7.csv` atau subset test set asli untuk mengonfirmasi akurasi kembali ke kisaran `0.77`.
+- Verifikasi manual di UI Streamlit dengan audio suara manusia nyata (bukan random noise), untuk kedua mode: unggah dan rekam mikrofon.

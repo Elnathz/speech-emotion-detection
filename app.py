@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gc
+import hashlib
+import traceback
 from pathlib import Path
 
 import pandas as pd
@@ -47,8 +49,16 @@ st.set_page_config(
 )
 
 
-def _upload_key(uploaded_file) -> tuple:
-    return (uploaded_file.name, getattr(uploaded_file, "size", None))
+def _audio_key(audio_file, source: str) -> tuple:
+    """Identitas cache berbasis hash byte, bukan nama file.
+
+    Rekaman mikrofon dapat memiliki nama/ukuran yang sama antar sesi,
+    sehingga name+size tidak cukup untuk invalidasi cache prediksi.
+    """
+    audio_file.seek(0)
+    digest = hashlib.sha256(audio_file.getvalue()).hexdigest()
+    audio_file.seek(0)
+    return (source, digest)
 
 
 def _clear_prediction_cache() -> None:
@@ -79,41 +89,61 @@ def main() -> None:
         """
         <div class="section-card">
             <div class="section-step">Langkah 1</div>
-            <div class="section-title">Unggah Audio</div>
-            <p class="section-desc">Gunakan file .wav atau .mp3 dengan suara yang jelas.</p>
+            <div class="section-title">Sumber Audio</div>
+            <p class="section-desc">Unggah file .wav/.mp3 atau rekam langsung dari mikrofon.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    uploaded_file = st.file_uploader(
-        "Pilih file audio",
-        type=["wav", "mp3"],
+    source_mode = st.radio(
+        "Sumber audio",
+        options=["Unggah File", "Rekam Mikrofon"],
+        horizontal=True,
         label_visibility="collapsed",
-        help="Format yang didukung: .wav dan .mp3",
     )
 
-    if uploaded_file is None:
+    audio_file = None
+    source_label = "upload"
+
+    if source_mode == "Unggah File":
+        audio_file = st.file_uploader(
+            "Pilih file audio",
+            type=["wav", "mp3"],
+            label_visibility="collapsed",
+            help="Format yang didukung: .wav dan .mp3",
+        )
+        source_label = "upload"
+    else:
+        audio_file = st.audio_input(
+            "Rekam suara",
+            key="recorded_audio",
+        )
+        source_label = "record"
+        if audio_file is not None and not getattr(audio_file, "name", None):
+            audio_file.name = "rekaman-mikrofon.wav"
+
+    if audio_file is None:
         _reset_cloud_session()
         render_empty_state()
         return
 
-    file_key = _upload_key(uploaded_file)
+    file_key = _audio_key(audio_file, source_label)
     if st.session_state.get("prediction_file_key") != file_key:
         _clear_prediction_cache()
         st.session_state["prediction_file_key"] = file_key
 
-    display_name = Path(uploaded_file.name).name if uploaded_file.name else "unknown"
+    display_name = Path(audio_file.name).name if getattr(audio_file, "name", None) else "rekaman-mikrofon.wav"
 
     try:
-        uploaded_file.seek(0)
-        audio_info = get_audio_info(uploaded_file)
-        if display_name != "unknown":
-            audio_info["filename"] = display_name
-    except Exception:
+        audio_file.seek(0)
+        audio_info = get_audio_info(audio_file)
+        audio_info["filename"] = display_name
+    except Exception as exc:
         st.error(
             "File audio tidak dapat diproses. "
-            "Coba gunakan file .wav atau .mp3 dengan durasi pendek dan kualitas suara jelas."
+            "Coba gunakan file .wav atau .mp3 dengan durasi pendek dan kualitas suara jelas.\n\n"
+            f"Detail teknis: {type(exc).__name__}: {exc}"
         )
         return
 
@@ -122,7 +152,7 @@ def main() -> None:
         duration_sec=audio_info["duration_sec"],
         sample_rate=audio_info["sample_rate"],
         channels=audio_info["channels"],
-        file_size=format_file_size(getattr(uploaded_file, "size", None)),
+        file_size=format_file_size(getattr(audio_file, "size", None)),
     )
 
     st.markdown(
@@ -135,8 +165,8 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    uploaded_file.seek(0)
-    st.audio(uploaded_file)
+    audio_file.seek(0)
+    st.audio(audio_file)
 
     if IS_CLOUD:
         used = st.session_state.get("cloud_prediction_count", 0)
@@ -166,8 +196,8 @@ def main() -> None:
 
     if should_predict and not st.session_state.get("prediction_cache"):
         try:
-            uploaded_file.seek(0)
-            result, preprocess_info = run_prediction(uploaded_file, device_name)
+            audio_file.seek(0)
+            result, preprocess_info = run_prediction(audio_file, device_name)
             st.session_state["prediction_cache"] = {
                 "result": result,
                 "preprocess_info": preprocess_info,
@@ -193,11 +223,14 @@ def main() -> None:
             else:
                 st.error(f"Terjadi kesalahan saat memuat model.\n\n{error_text}")
             return
-        except Exception:
+        except Exception as exc:
             st.error(
                 "File audio tidak dapat diproses. "
-                "Coba gunakan file .wav atau .mp3 dengan durasi pendek dan kualitas suara jelas."
+                "Coba gunakan file .wav atau .mp3 dengan durasi pendek dan kualitas suara jelas.\n\n"
+                f"Detail teknis: {type(exc).__name__}: {exc}"
             )
+            with st.expander("Traceback lengkap (debug)"):
+                st.code(traceback.format_exc(), language="python")
             return
 
     cache = st.session_state.get("prediction_cache")
@@ -231,9 +264,9 @@ def main() -> None:
     if want_stt:
         if "transcript" not in cache:
             with st.spinner("Mentranskrip ucapan ke teks (Whisper)..."):
-                uploaded_file.seek(0)
+                audio_file.seek(0)
                 transcript, stt_ok = safe_transcribe(
-                    uploaded_file,
+                    audio_file,
                     WHISPER_MODEL,
                     device_name,
                     WHISPER_LANGUAGE,

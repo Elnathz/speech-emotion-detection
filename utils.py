@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import librosa
 import numpy as np
 import pandas as pd
 import soundfile as sf
@@ -18,7 +19,10 @@ from model import WavLMSERModel
 
 TARGET_SAMPLE_RATE = 16000
 MAX_DURATION_SECONDS = 4.0
+MIN_DURATION_SECONDS = 0.35
 MAX_SAMPLES = int(TARGET_SAMPLE_RATE * MAX_DURATION_SECONDS)
+MIN_SAMPLES = int(TARGET_SAMPLE_RATE * MIN_DURATION_SECONDS)
+SILENCE_TRIM_TOP_DB = 30
 
 LABEL2ID = {
     "netral": 0,
@@ -90,11 +94,53 @@ def load_audio(file: io.BytesIO | str | Path) -> tuple[torch.Tensor, int]:
     return waveform, int(sample_rate)
 
 
+def _trim_silence(y: np.ndarray) -> np.ndarray:
+    """Potong hening di awal/akhir (30 dB), dibuang jika hasil terlalu pendek.
+
+    Guard `len(yt) >= MIN_SAMPLES` mencegah audio lirih (misal rekaman
+    mikrofon bervolume rendah) hilang total akibat trim yang terlalu agresif.
+    Identik dengan `load_waveform()` pada ser-augmemted.ipynb.
+    """
+    trimmed, _ = librosa.effects.trim(y, top_db=SILENCE_TRIM_TOP_DB)
+    if len(trimmed) >= MIN_SAMPLES:
+        return trimmed
+    return y
+
+
+def _peak_normalize(y: np.ndarray) -> np.ndarray:
+    """Normalisasi amplitudo puncak ke [-1.0, 1.0]. Skip jika sinyal nyaris hening."""
+    peak = float(np.max(np.abs(y))) if len(y) else 0.0
+    if peak > 1e-5:
+        return y / peak
+    return y
+
+
+def _fix_length_eval(y: np.ndarray) -> np.ndarray:
+    """Center-crop jika > MAX_SAMPLES, right zero-pad jika < MAX_SAMPLES.
+
+    Mode eval WAJIB center crop (bukan potong dari awal) agar konsisten
+    dengan `fix_length(mode='eval')` pada notebook v7. Model dilatih dengan
+    asumsi ini; crop dari awal akan mengubah distribusi input.
+    """
+    if len(y) > MAX_SAMPLES:
+        start = max(0, (len(y) - MAX_SAMPLES) // 2)
+        y = y[start : start + MAX_SAMPLES]
+    elif len(y) < MAX_SAMPLES:
+        y = np.pad(y, (0, MAX_SAMPLES - len(y)), mode="constant")
+    return y.astype(np.float32)
+
+
 def preprocess_audio(
     audio: torch.Tensor,
     sample_rate: int,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
-    """Konversi ke mono 16 kHz dan potong/pad maksimal 6 detik."""
+    """Preprocessing SER sesuai kontrak v7 (ser-augmemted.ipynb Cell 6).
+
+    Urutan wajib: mono -> resample 16kHz -> sanitasi NaN -> trim silence
+    30dB -> peak normalization -> center-crop/zero-pad ke MAX_SAMPLES.
+    Menyimpang dari urutan ini membuat input inferensi berbeda dari
+    kondisi training checkpoint v7.
+    """
     if audio.ndim == 1:
         audio = audio.unsqueeze(0)
     if audio.shape[0] > 1:
@@ -105,13 +151,15 @@ def preprocess_audio(
     if sample_rate != TARGET_SAMPLE_RATE:
         audio = torchaudio.functional.resample(audio, sample_rate, TARGET_SAMPLE_RATE)
 
-    if audio.shape[-1] > MAX_SAMPLES:
-        audio = audio[..., :MAX_SAMPLES]
-        trimmed = True
-    else:
-        trimmed = original_duration > MAX_DURATION_SECONDS
+    y = audio.squeeze(0).numpy().astype(np.float32)
+    y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+    y = _trim_silence(y)
+    y = _peak_normalize(y)
 
-    duration_after = audio.shape[-1] / TARGET_SAMPLE_RATE
+    trimmed = len(y) > MAX_SAMPLES
+    y = _fix_length_eval(y)
+
+    duration_after = len(y) / TARGET_SAMPLE_RATE
     info = {
         "original_sample_rate": sample_rate,
         "target_sample_rate": TARGET_SAMPLE_RATE,
@@ -120,7 +168,7 @@ def preprocess_audio(
         "trimmed": trimmed,
         "max_duration_sec": MAX_DURATION_SECONDS,
     }
-    return audio.squeeze(0), info
+    return torch.from_numpy(y), info
 
 
 def get_audio_info(file: io.BytesIO | str | Path) -> dict[str, Any]:
@@ -228,12 +276,23 @@ def predict_emotion(
     waveform: torch.Tensor,
     device: torch.device | str,
 ) -> dict[str, Any]:
-    """Jalankan inferensi emosi pada waveform 1D yang sudah dipreprocess."""
+    """Jalankan inferensi emosi pada waveform 1D yang sudah dipreprocess.
+
+    Argumen processor WAJIB identik dengan pemanggilan feature_extractor
+    pada ser-augmemted.ipynb (fungsi prediksi Cell 15). Tanpa
+    `return_tensors="pt"`, hasil BatchFeature berisi list numpy, bukan
+    tensor, sehingga `.to(device)` melempar AttributeError.
+    """
     device = torch.device(device)
 
     inputs = processor(
-        waveform.numpy(),
+        [waveform.numpy()],
         sampling_rate=TARGET_SAMPLE_RATE,
+        padding=True,
+        truncation=True,
+        max_length=MAX_SAMPLES,
+        return_attention_mask=True,
+        return_tensors="pt",
     )
     input_values = inputs["input_values"].to(device)
     attention_mask = inputs.get("attention_mask")
