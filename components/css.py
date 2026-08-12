@@ -401,6 +401,32 @@ def inject_custom_css() -> None:
             line-height: 1.35;
             padding-top: 0.05rem;
         }
+        .sidebar-history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-bottom: 0.85rem;
+        }
+        .sidebar-history-item {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            background: rgba(15,23,42,0.45);
+            border: 1px solid rgba(148,163,184,0.12);
+            border-radius: 10px;
+            padding: 0.45rem 0.6rem;
+        }
+        .sidebar-history-emoji { font-size: 1.15rem; line-height: 1; }
+        .sidebar-history-label {
+            font-size: 0.8rem;
+            font-weight: 650;
+            color: #f1f5f9;
+            text-transform: capitalize;
+        }
+        .sidebar-history-meta {
+            font-size: 0.68rem;
+            color: #64748b;
+        }
         .sidebar-divider {
             border: none;
             border-top: 1px solid rgba(148,163,184,0.12);
