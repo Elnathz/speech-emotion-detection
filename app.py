@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +25,7 @@ from services import (
     run_prediction,
     load_whisper_lazy,
 )
-from utils import ID2LABEL, LABEL2ID, get_audio_info, safe_transcribe
+from utils import ID2LABEL, LABEL2ID, get_audio_info, get_waveform_envelope, safe_transcribe
 
 # --- Komponen Antarmuka ---
 from components.css import inject_custom_css
@@ -37,6 +38,8 @@ from components.ui import (
     render_probability_bars,
     render_result_card,
     render_transcript_card,
+    render_waveform_chart,
+    render_export_buttons,
     format_file_size,
     summarize_prediction,
 )
@@ -167,6 +170,8 @@ def main() -> None:
     )
     audio_file.seek(0)
     st.audio(audio_file)
+    audio_file.seek(0)
+    render_waveform_chart(get_waveform_envelope(audio_file))
 
     if IS_CLOUD:
         used = st.session_state.get("cloud_prediction_count", 0)
@@ -207,6 +212,17 @@ def main() -> None:
                 st.session_state["cloud_prediction_count"] = (
                     st.session_state.get("cloud_prediction_count", 0) + 1
                 )
+            history = st.session_state.setdefault("prediction_history", [])
+            history.insert(
+                0,
+                {
+                    "filename": display_name,
+                    "label": result["predicted_label"],
+                    "confidence": result["confidence"],
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                },
+            )
+            del history[10:]
         except FileNotFoundError as exc:
             st.error(f"File model tidak ditemukan.\n\n{exc}")
             return
@@ -287,6 +303,8 @@ def main() -> None:
 
     st.markdown("#### Confidence Semua Kelas")
     render_probability_bars(result["probabilities_df"], highlight=result["predicted_label"])
+
+    render_export_buttons(result, cache.get("transcript"), display_name)
 
     with st.expander("Detail Teknis"):
         st.markdown("**Probabilitas Semua Kelas**")
