@@ -71,8 +71,8 @@ def render_hero() -> None:
         <div class="hero-card">
             <div class="hero-title">Speech Emotion Recognition</div>
             <p class="hero-subtitle">
-                Unggah suara, dengarkan preview, lalu sistem akan memprediksi emosi dominan
-                sekaligus menampilkan transkrip teks dari audio.
+                Unggah atau rekam suara, dengarkan preview, lalu sistem akan memprediksi emosi
+                dominan sekaligus menampilkan transkrip teks dari audio.
             </p>
             <span class="hero-badge">WavLM + Whisper STT</span>
         </div>
@@ -86,8 +86,8 @@ def render_empty_state() -> None:
         """
         <div class="empty-state">
             <div class="empty-icon">🎧</div>
-            <div class="empty-title">Belum ada audio yang diunggah.</div>
-            <div class="empty-desc">Mulai dengan mengunggah file .wav atau .mp3.</div>
+            <div class="empty-title">Belum ada audio yang tersedia.</div>
+            <div class="empty-desc">Unggah file .wav/.mp3 atau rekam langsung dari mikrofon.</div>
         </div>
         """,
         unsafe_allow_html=True,
