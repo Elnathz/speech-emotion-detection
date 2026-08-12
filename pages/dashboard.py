@@ -110,5 +110,12 @@ def main() -> None:
         st.caption(f"Epoch terbaik: {metrics.get('best_epoch', '—')}")
         st.code(MODEL_DISPLAY_PATH, language=None)
 
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+    link1, link2 = st.columns(2)
+    with link1:
+        st.page_link("pages/model.py", label="Lihat detail Model →", icon="🧠")
+    with link2:
+        st.page_link("pages/dataset.py", label="Lihat detail Dataset →", icon="📚")
+
 
 main()
