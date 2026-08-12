@@ -1,6 +1,10 @@
 """Layanan ML (Model Loading & Inference) dengan sistem cache Streamlit."""
 
 import gc
+import json
+from pathlib import Path
+
+import pandas as pd
 import torch
 import streamlit as st
 
@@ -15,6 +19,10 @@ except ImportError:
 from model import load_model
 from utils import load_audio, preprocess_audio, predict_emotion
 from config import SER_BACKBONE
+
+MODELS_DIR = Path(__file__).resolve().parent / "models"
+DATASET_METADATA_PATH = MODELS_DIR / "metadata_split_v7.csv"
+MODEL_CONFIG_PATH = MODELS_DIR / "config_v7.json"
 
 
 @st.cache_resource(show_spinner="Memuat model WavLM...")
@@ -34,6 +42,23 @@ def load_whisper_lazy(model_name: str, device_name: str):
     """Cache pipeline Whisper — hanya dimuat saat user pertama kali minta transkrip."""
     from utils import create_whisper_pipeline
     return create_whisper_pipeline(model_name, device_name)
+
+
+@st.cache_data(show_spinner=False)
+def load_dataset_metadata() -> pd.DataFrame | None:
+    """Metadata split dataset training (~19rb baris) — dicache karena dipakai sidebar & dashboard."""
+    if not DATASET_METADATA_PATH.exists():
+        return None
+    return pd.read_csv(DATASET_METADATA_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def load_model_metrics() -> dict | None:
+    """Metrik training model (akurasi, epoch terbaik, dst) dari config_v7.json."""
+    if not MODEL_CONFIG_PATH.exists():
+        return None
+    with open(MODEL_CONFIG_PATH) as f:
+        return json.load(f)
 
 
 def check_model_ready(device_name: str) -> tuple[bool, str | None]:
