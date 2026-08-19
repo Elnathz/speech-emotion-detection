@@ -8,6 +8,7 @@ import streamlit as st
 from config import EMOTION_COLORS
 from services import load_dataset_metadata, load_label_noise_candidates
 from utils import ID2LABEL
+from components.css import inject_custom_css
 from components.ui import render_section_header
 
 LABELS_ORDER = [ID2LABEL[i] for i in sorted(ID2LABEL)]
@@ -19,6 +20,7 @@ def _id_number(n: int) -> str:
 
 
 def main() -> None:
+    inject_custom_css()
     st.markdown(
         """
         <div class="hero-card">

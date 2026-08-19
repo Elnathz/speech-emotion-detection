@@ -224,7 +224,17 @@ def transcribe_audio(asr_pipeline: Any, waveform: "np.ndarray", language: str = 
     """Transkrip audio ke teks menggunakan pipeline Whisper (ASR)."""
     output = asr_pipeline(
         {"raw": waveform, "sampling_rate": TARGET_SAMPLE_RATE},
-        generate_kwargs={"language": language, "task": "transcribe"},
+        generate_kwargs={
+            "language": language,
+            "task": "transcribe",
+            "temperature": (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+            "compression_ratio_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            # condition_on_prev_tokens=False (bukan default True ala CLI OpenAI): mencegah
+            # satu segmen yang berhalusinasi/nge-loop meracuni konteks segmen berikutnya.
+            "condition_on_prev_tokens": False,
+        },
         chunk_length_s=30,
     )
     return str(output.get("text", "")).strip()
@@ -236,7 +246,15 @@ def transcribe_audio_segments(
     """Transkrip audio + timestamp per-segmen (untuk analisis emosi per-segmen)."""
     output = asr_pipeline(
         {"raw": waveform, "sampling_rate": TARGET_SAMPLE_RATE},
-        generate_kwargs={"language": language, "task": "transcribe"},
+        generate_kwargs={
+            "language": language,
+            "task": "transcribe",
+            "temperature": (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+            "compression_ratio_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+            "condition_on_prev_tokens": False,
+        },
         chunk_length_s=30,
         return_timestamps=True,
     )

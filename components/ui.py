@@ -99,17 +99,70 @@ def render_hero() -> None:
     )
 
 
-def render_empty_state() -> None:
+def render_empty_state(
+    icon: str = "🎧",
+    title: str = "Belum ada audio yang tersedia.",
+    desc: str = "Unggah file .wav/.mp3 atau rekam langsung dari mikrofon.",
+) -> None:
     st.markdown(
-        """
+        f"""
         <div class="empty-state">
-            <div class="empty-icon">🎧</div>
-            <div class="empty-title">Belum ada audio yang tersedia.</div>
-            <div class="empty-desc">Unggah file .wav/.mp3 atau rekam langsung dari mikrofon.</div>
+            <div class="empty-icon">{icon}</div>
+            <div class="empty-title">{html.escape(title)}</div>
+            <div class="empty-desc">{html.escape(desc)}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_status_card(icon: str, label: str, value: str, ok: bool = True, full_width: bool = False) -> str:
+    """Kartu status dengan aksen warna ok/fail, dipakai di grid dash-status-grid."""
+    state = "ok" if ok else "fail"
+    width_class = " dash-status-card--full" if full_width else ""
+    return (
+        f'<div class="dash-status-card {state}{width_class}">'
+        f'<div class="dash-status-icon">{icon}</div>'
+        f'<div class="dash-status-body">'
+        f'<div class="dash-status-label">{html.escape(label)}</div>'
+        f'<div class="dash-status-value">{html.escape(value)}</div>'
+        f"</div></div>"
+    )
+
+
+def render_status_grid(cards: list[str]) -> None:
+    st.markdown(f'<div class="dash-status-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def render_quota_card(used: int, limit: int) -> str:
+    """Kartu kuota cloud dengan progress bar, sengaja full-width untuk memutus grid rata."""
+    pct = min(100.0, used / limit * 100) if limit else 0.0
+    return (
+        '<div class="dash-status-card ok dash-status-card--full dash-quota-card">'
+        '<div class="dash-status-icon">☁️</div>'
+        '<div class="dash-status-body" style="flex:1;">'
+        '<div class="dash-status-label">Kuota Cloud Sesi Ini</div>'
+        f'<div class="dash-status-value">{used}/{limit} prediksi</div>'
+        '<div class="prob-bar-wrap" style="margin-top:0.45rem;">'
+        f'<div class="prob-bar-fill" style="width:{pct:.0f}%; background:#fafafa;"></div>'
+        "</div></div></div>"
+    )
+
+
+def render_activity_list(history: list[dict]) -> None:
+    """Riwayat aktivitas sesi dengan aksen warna per emosi, pengganti st.dataframe generik."""
+    rows = "".join(
+        f'<div class="dash-activity-row" style="--emotion-color:{EMOTION_COLORS.get(entry["label"], "#a3a3a3")};">'
+        f'<span class="dash-activity-emoji">{EMOTION_ICONS.get(entry["label"], "🎭")}</span>'
+        f'<div class="dash-activity-main">'
+        f'<div class="dash-activity-label">{html.escape(entry["label"])}</div>'
+        f'<div class="dash-activity-meta">{html.escape(entry["time"])} · {html.escape(entry["filename"])}</div>'
+        "</div>"
+        f'<div class="dash-activity-conf">{entry["confidence"] * 100:.1f}%</div>'
+        "</div>"
+        for entry in history
+    )
+    st.markdown(f'<div class="dash-activity-list">{rows}</div>', unsafe_allow_html=True)
 
 
 def render_metadata_card(
