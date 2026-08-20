@@ -11,6 +11,7 @@ from sklearn.metrics import classification_report
 from config import MODEL_DISPLAY_PATH, SER_BACKBONE
 from services import load_model_metrics, load_ser_model, load_test_evaluation, load_training_history
 from utils import ID2LABEL
+from components.css import inject_custom_css
 from components.ui import render_section_header
 
 LABELS_ORDER = [ID2LABEL[i] for i in sorted(ID2LABEL)]
@@ -135,6 +136,7 @@ def _render_confusion_matrix(eval_df: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    inject_custom_css()
     st.markdown(
         """
         <div class="hero-card">

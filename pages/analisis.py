@@ -18,6 +18,7 @@ from config import (
     WHISPER_MODEL,
     WHISPER_LANGUAGE,
     MAX_CLOUD_PREDICTIONS,
+    MAX_RECORD_DURATION_SECONDS,
     MIN_RECORD_DURATION_SECONDS,
     MODEL_DISPLAY_PATH,
 )
@@ -30,7 +31,6 @@ from services import (
 from utils import (
     ID2LABEL,
     LABEL2ID,
-    MAX_DURATION_SECONDS,
     get_audio_info,
     get_transcription_waveform,
     get_waveform_envelope,
@@ -39,6 +39,7 @@ from utils import (
     summarize_prediction,
 )
 
+from components.css import inject_custom_css
 from components.recorder import record_audio
 from components.ui import (
     render_empty_state,
@@ -79,6 +80,7 @@ def _reset_cloud_session() -> None:
 
 
 def main() -> None:
+    inject_custom_css()
     device_name = "cuda" if torch.cuda.is_available() else "cpu"
     model_ready, model_error = check_model_ready(device_name)
 
@@ -126,11 +128,11 @@ def main() -> None:
             source_label = "upload"
         else:
             st.caption(
-                f"Rekaman otomatis berhenti di {MAX_DURATION_SECONDS:.0f} detik. "
+                f"Rekaman otomatis berhenti di {MAX_RECORD_DURATION_SECONDS:.0f} detik. "
                 f"Minimal {MIN_RECORD_DURATION_SECONDS:.1f} detik."
             )
             audio_file = record_audio(
-                max_seconds=MAX_DURATION_SECONDS,
+                max_seconds=MAX_RECORD_DURATION_SECONDS,
                 min_seconds=MIN_RECORD_DURATION_SECONDS,
                 key="recorded_audio",
             )
