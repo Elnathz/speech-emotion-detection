@@ -1,5 +1,29 @@
 # Walkthrough
 
+## [2026-08-24] Preload Whisper Small
+
+- Whisper dikonfigurasi konsisten sebagai `openai/whisper-small`.
+- Pipeline Whisper dipreload ketika aplikasi mulai dan dicache dengan `st.cache_resource`.
+- Preprocessing STT memakai audio penuh, mono, dan 16 kHz. Audio tidak dipaksa menjadi 4 detik karena 4 detik hanya kontrak model SER.
+- Analisis segmen memakai timestamp Whisper, melewati segmen kurang dari 0.35 detik, dan membatasi maksimal 20 segmen.
+
+## [2026-08-24] Streamlit Menggunakan Checkpoint Hugging Face v4
+
+### Perubahan
+
+- `model.py` sekarang mengambil `ser_wavlm_v4_best.pt` dari `elnathzzz/wavlm-ser-multilingual` melalui Hugging Face Hub.
+- `utils.py` menyamakan preprocessing inferensi dengan `pipeline/ver4-ser-pipeline.ipynb`: resample 16 kHz, trim silence 30 dB, peak normalization, crop dari awal ke 4 detik, dan zero-padding.
+- `services.py` serta `config.py` tidak lagi menunjuk ke namespace checkpoint v7.
+- `requirements.txt` memakai `huggingface_hub` dan tidak lagi memerlukan `gdown` untuk checkpoint SER.
+- `model.py` memakai `AutoConfig` dan `AutoModel`, serta dropout pooling `DROPOUT * 0.5` seperti notebook v4.
+- `utils.py` memakai `librosa.resample` agar resampling inferensi mengikuti preprocessing notebook v4.
+
+### Verifikasi dan Batasan
+
+- Arsitektur checkpoint tetap divalidasi dengan `strict=True` saat state dict dimuat.
+- Artefak metrik v4 harus tersedia di folder `models/` agar dashboard metrik dapat menampilkannya.
+- Unduhan model memerlukan akses jaringan ke Hugging Face saat checkpoint belum tersimpan lokal.
+
 ## [2026-08-13] Fix Bug Kritis: Iframe Recorder Membengkak Tanpa Henti
 
 ### Konteks

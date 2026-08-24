@@ -1,5 +1,47 @@
 # TDD Changes Tracker
 
+## [2026-08-24] Preload Whisper Small untuk Analisis Transkrip dan Segmen
+
+### Rincian Perubahan
+
+1. Whisper dikunci ke `openai/whisper-small` pada lokal maupun cloud agar kualitas transkripsi konsisten.
+2. Pipeline Whisper dipreload saat startup aplikasi dan tetap disimpan dengan `st.cache_resource`.
+3. Audio STT tetap memakai waveform penuh, mono, dan resample ke 16 kHz. Audio tidak dipotong 4 detik karena batas 4 detik hanya berlaku untuk inferensi SER.
+4. Analisis per segmen tetap menggunakan timestamp Whisper, melewati segmen di bawah 0.35 detik, dan membatasi maksimal 20 segmen.
+
+### Dampak dan Batasan
+
+- Cold start berpindah ke startup deployment. User tidak lagi memicu download Whisper saat pertama kali meminta analisis segmen.
+- Startup memerlukan waktu dan RAM lebih besar karena Whisper small sekitar 967 MB.
+- Jika preload gagal karena koneksi atau resource, aplikasi tetap berjalan dan akan mencoba memuat ulang saat fitur STT digunakan.
+
+## [2026-08-24] Sinkronisasi Streamlit dengan Model Hugging Face v4
+
+### File Terdampak
+
+- [model.py](model.py)
+- [utils.py](utils.py)
+- [services.py](services.py)
+- [config.py](config.py)
+- [requirements.txt](requirements.txt)
+- [walkthrough.md](walkthrough.md)
+
+### Rincian Perubahan
+
+1. Streamlit sekarang mengunduh `ser_wavlm_v4_best.pt` dari repo Hugging Face `elnathzzz/wavlm-ser-multilingual` menggunakan `huggingface_hub`.
+2. Arsitektur inferensi tetap memakai WavLM base-plus, attentive statistics pooling, dan classifier v4 yang kompatibel dengan checkpoint.
+3. Preprocessing inferensi disamakan dengan `pipeline/ver4-ser-pipeline.ipynb`: mono, resample 16 kHz, sanitasi NaN, trim silence 30 dB, peak normalization, crop dari awal ke 4 detik, lalu zero-padding.
+4. Namespace metrik Streamlit diarahkan ke artefak v4. Jika artefak v4 belum tersedia di `models/`, panel metrik akan tetap kosong tanpa menghambat inferensi.
+5. Ketergantungan Google Drive dan `gdown` dihapus dari alur pemuatan checkpoint.
+6. Backbone Streamlit memakai `AutoConfig` dan `AutoModel` seperti pipeline v4, dengan dropout pooling `DROPOUT * 0.5`.
+7. Resampling inferensi memakai `librosa.resample` agar mengikuti implementasi `librosa.load(..., sr=16000)` pada pipeline v4.
+
+### Dampak dan Batasan
+
+- Unduhan pertama memerlukan akses ke Hugging Face Hub. Repo private memerlukan token Hugging Face.
+- Checkpoint v4 harus cocok dengan arsitektur attentive statistics pooling. `load_state_dict(strict=True)` tetap digunakan untuk mendeteksi mismatch.
+- Perubahan crop dari center ke awal dan resampling dengan librosa mengubah input inferensi agar konsisten dengan pipeline v4.
+
 ## [2026-08-24] Revisi Pipeline v5 Menjadi Standalone dari WavLM Base
 
 ### File Terdampak
