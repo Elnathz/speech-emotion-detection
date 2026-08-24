@@ -363,3 +363,58 @@ Hasil prediksi akan berbeda dibanding sebelum perbaikan ini, untuk audio yang sa
 
 - Jalankan skrip evaluasi batch terhadap `models/evaluasi_test_v7.csv` atau subset test set asli untuk mengonfirmasi akurasi kembali ke kisaran `0.77`.
 - Verifikasi manual di UI Streamlit dengan audio suara manusia nyata (bukan random noise), untuk kedua mode: unggah dan rekam mikrofon.
+ 
+ 
+## Sesi: Refinement Training Pipeline v8
+### Masalah:
+- Recall untuk kelas **sedih** dan **senang** sangat rendah (dibawah 70%).
+- Akurasi dataset **IndoWaveSentiment** sangat buruk karena tertelan oleh jumlah dataset CREMA-D.
+### Solusi yang Diimplementasikan:
+Modifikasi langsung pada resep training Kaggle (pipeline/ver2-ser-pipeline.ipynb):
+1. **Selective Noise Filtering**: Mematikan filter hard-drop khusus untuk kelas sedih, senang, takut, dan jijik agar data valid tidak terbuang oleh model yang belum yakin.
+2. **Class-Specific Augmentation**: Menambahkan pipeline augmentasi (pitch, time stretch) yang secara eksklusif membidik kelas lemah di CREMA-D.
+3. **Extreme Oversampling**: Menduplikasi data latih IndoWaveSentiment sebanyak 4 kali lipat sebelum proses split.
+
+## Sesi: Koreksi Pipeline Training dan Noise Handling di ver3
+
+### Diagnosis
+
+Audit terhadap notebook ver2 dan ver3 menemukan bahwa loop training Stage 1 dan Stage 2 belum ada. Notebook memuat checkpoint v7 dan menampilkan metrik lama, sehingga metrik tersebut belum membuktikan hasil eksperimen v8.
+
+### Perubahan
+
+- Target kerja dipindahkan ke pipeline/ver3-ser-pipeline.ipynb. Notebook ver2 tidak diubah.
+- Augmentasi offline tetap hanya untuk IndoWave dan E-SERAVD karena keduanya lebih kecil. Augmentasi CREMA-D dikeluarkan dari baseline.
+- Oversampling IndoWave 4x setelah augmentasi dihapus agar sumber kecil tidak menjadi dominan secara tidak wajar.
+- Loop Stage 1 dan Stage 2 ditambahkan, termasuk penyimpanan checkpoint.
+- Learning rate backbone diperbaiki agar parameter backbone.* benar-benar memakai learning rate backbone.
+- Bug core pada gradual unfreezing diperbaiki.
+- Mixup dinonaktifkan karena helper yang dipanggil tidak tersedia.
+- Checkpoint dipilih berdasarkan gabungan macro-F1, recall sedih, recall senang, precision takut, dan precision jijik.
+- Hard drop dibuat konservatif dengan confidence minimal 0.95 dan hanya melindungi label CREMA-D yang lebih tepercaya. Kelas target recall tidak dihapus.
+- Tabel distribusi augmentasi dan metrik precision, recall, F1 per sumber serta kelas ditambahkan.
+
+### Verifikasi
+
+- JSON notebook valid.
+- Cell Python yang dapat diparse valid secara AST.
+- Training Kaggle belum dijalankan. Kenaikan metrik belum boleh diklaim.
+
+### Catatan
+
+Target precision takut dan jijik di atas 80% serta recall sedih dan senang di atas 80% harus dibuktikan melalui run Kaggle yang reproducible. Nilai dari screenshot, artefak lokal, dan output notebook sebelumnya berasal dari run yang berbeda dan tidak boleh dibandingkan langsung.
+
+## Sesi: Dokumentasi Pipeline v9
+
+### Perubahan
+
+- Header paling atas `pipeline/ver3-ser-pipeline.ipynb` diubah dari v8 menjadi v9.
+- Ditambahkan tabel perbandingan v8 ke v9 agar scope augmentasi, training loop, optimizer, hard drop, dan target metrik terdokumentasi langsung di notebook.
+- Target v9 ditulis sebagai sasaran eksperimen, bukan klaim hasil. Recall `sedih` dan `senang`, serta precision `takut` dan `jijik`, ditargetkan minimal 80%.
+- Riwayat v7 ke v8 dipertahankan sebagai konteks historis.
+
+### Verifikasi
+
+- JSON notebook valid.
+- 33 cell Python dapat diparse dengan AST. Satu cell Kaggle yang memakai `!pip` dan `kaggle_secrets` dilewati dari pemeriksaan AST.
+- Tidak ada perubahan pada `pipeline/ver2-ser-pipeline.ipynb` untuk subtask dokumentasi ini.
